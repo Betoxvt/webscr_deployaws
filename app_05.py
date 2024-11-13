@@ -2,6 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 import time
 import pandas as pd
+import sqlite3
 
 def fetch_page(url):
     response = requests.get(url)  # Realiza a requisição HTTP para obter o conteúdo da página, retorna 200 se bem sucedido
@@ -25,25 +26,47 @@ def parse_page(html):
         'timestamp': timestamp
     }
 
-def save_to_dataframe(product_info, df):
-    new_row = pd.DataFrame([product_info])
+
+def create_connection(db_name='iphone_prices.db'):
+    """Cria uma conexão com o banco de dados SQLite."""
+    conn = sqlite3.connect(db_name)
+    return conn
+
+
+def setup_database(conn):
+    """Cria a tabela de preços se ela não existir."""
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS prices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_name TEXT,
+            old_price INTEGER,
+            new_price INTEGER,
+            installment_price INTEGER,
+            timestamp TEXT
+        )
+    ''')
+    conn.commit()
+
+
+def save_to_database(conn, data):
     # Salva uma linha de dados no banco de dados SQLite usando pandas
-    df = pd.concat([df, new_row], ignore_index=True)
-    return df
+    df = pd.concat([data])
+    df.to_sql('prices', conn, if_exists='append', index=False)  # Salva no banco de dados
 
 # Teste das funções
 if __name__ == '__main__':
-    # DataFrame para acumular os resultados
-    df = pd.DataFrame()
+    # Configuração do banco de dados
+    conn = create_connection()
+    setup_database(conn)
 
     while True:
         # Faz a requisição e parseia a página
         url = 'https://www.mercadolivre.com.br/apple-iphone-16-pro-1-tb-titnio-preto-distribuidor-autorizado/p/MLB1040287851#polycard_client=search-nordic&wid=MLB5054621110&sid=search&searchVariation=MLB1040287851&position=6&search_layout=stack&type=product&tracking_id=92c2ddf6-f70e-475b-b41e-fe2742459774'
         page_content = fetch_page(url)
-        print(page_content)  # Mostra os primeiros 500 caracteres do HTML
-        # Converte o dicionário em DataFrame e adiciona ao acumulado usando pd.concat
-        df = save_to_dataframe(product_info, df)
-        # Exibe o DataFrame atualizado
-        print(df)
+        product_info = parse_page(page_content)
+        # Salva os dados no banco de dados SQLite
+        save_to_database(conn, product_info)
+        print("Dados salvos no banco:", product_info)
         # Aguarda 10 segundos antes da próxima execução
         time.sleep(10)
